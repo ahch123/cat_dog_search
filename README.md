@@ -22,6 +22,7 @@ python prepare_data.py \
 ```
 
 运行后会得到如下目录结构（使用 `torchvision.datasets.ImageFolder`）：
+请将数据集整理成如下目录结构（使用 `torchvision.datasets.ImageFolder`）：
 
 ```
 workspace/xiaoy/
