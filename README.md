@@ -12,6 +12,16 @@ pip install -r requirements.txt
 
 ## 2. 数据集准备
 
+如果你的图片都放在一个目录中（例如 `D:\software\datasets\cat_dog_img\cat_dog_img\img`），并且**文件名以 0 开头的是猫、以 1 开头的是狗**，可以使用脚本按 8:2 自动拆分训练集与验证集：
+
+```bash
+python prepare_data.py \
+  --source-dir "D:\\software\\datasets\\cat_dog_img\\cat_dog_img\\img" \
+  --output-dir data \
+  --train-ratio 0.8
+```
+
+运行后会得到如下目录结构（使用 `torchvision.datasets.ImageFolder`）：
 请将数据集整理成如下目录结构（使用 `torchvision.datasets.ImageFolder`）：
 
 ```
