@@ -1,5 +1,9 @@
 import argparse
 import os
+from pathlib import Path
+
+import numpy as np
+import pymysql
 import sqlite3
 from pathlib import Path
 
@@ -14,6 +18,17 @@ SUPPORTED = {".jpg", ".jpeg", ".png", ".bmp", ".gif"}
 
 
 def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="提取图像特征并保存到 MySQL 数据库")
+    parser.add_argument("--data-dir", type=str, default="data", help="含 train/val 的数据目录")
+    parser.add_argument("--checkpoint", type=str, default="checkpoints/best.pt", help="训练得到的权重")
+    parser.add_argument("--image-size", type=int, default=224, help="输入图像大小")
+
+    parser.add_argument("--mysql-host", type=str, default="127.0.0.1", help="MySQL 主机")
+    parser.add_argument("--mysql-port", type=int, default=3306, help="MySQL 端口")
+    parser.add_argument("--mysql-user", type=str, default="root", help="MySQL 用户名")
+    parser.add_argument("--mysql-password", type=str, default="", help="MySQL 密码")
+    parser.add_argument("--mysql-database", type=str, default="image_search", help="MySQL 数据库名")
+    parser.add_argument("--mysql-table", type=str, default="image_features", help="MySQL 表名")
     parser = argparse.ArgumentParser(description="提取图像特征并保存到 SQLite 数据库")
     parser.add_argument("--data-dir", type=str, default="data", help="含 train/val 的数据目录")
     parser.add_argument("--checkpoint", type=str, default="checkpoints/best.pt", help="训练得到的权重")
@@ -64,6 +79,51 @@ def iter_images(data_dir: Path) -> list[tuple[Path, str, str]]:
     return items
 
 
+def get_conn(args: argparse.Namespace):
+    return pymysql.connect(
+        host=args.mysql_host,
+        port=args.mysql_port,
+        user=args.mysql_user,
+        password=args.mysql_password,
+        database=args.mysql_database,
+        charset="utf8mb4",
+        autocommit=False,
+    )
+
+
+def init_table(conn, table_name: str) -> None:
+    with conn.cursor() as cursor:
+        cursor.execute(
+            f"""
+            CREATE TABLE IF NOT EXISTS `{table_name}` (
+                id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                image_path VARCHAR(1024) NOT NULL UNIQUE,
+                label VARCHAR(32) NOT NULL,
+                split_name VARCHAR(32) NOT NULL,
+                feature LONGBLOB NOT NULL,
+                dim INT NOT NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+            """
+        )
+    conn.commit()
+
+
+def upsert_feature(conn, table_name: str, image_path: str, label: str, split_name: str, feature: np.ndarray) -> None:
+    feature = feature.astype(np.float32)
+    with conn.cursor() as cursor:
+        cursor.execute(
+            f"""
+            INSERT INTO `{table_name}` (image_path, label, split_name, feature, dim)
+            VALUES (%s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                label = VALUES(label),
+                split_name = VALUES(split_name),
+                feature = VALUES(feature),
+                dim = VALUES(dim)
+            """,
+            (image_path, label, split_name, feature.tobytes(), feature.shape[0]),
+        )
 def init_db(conn: sqlite3.Connection) -> None:
     conn.execute(
         """
@@ -120,6 +180,16 @@ def main() -> None:
     if not data_items:
         raise SystemExit("No images found in data directory.")
 
+    conn = get_conn(args)
+    init_table(conn, args.mysql_table)
+
+    for image_path, label, split_name in tqdm(data_items, desc="Indexing"):
+        feature = extract_feature(model, image_path, transform, device)
+        upsert_feature(conn, args.mysql_table, os.path.abspath(str(image_path)), label, split_name, feature)
+
+    conn.commit()
+    conn.close()
+    print(f"Indexed {len(data_items)} images into MySQL {args.mysql_database}.{args.mysql_table}")
     conn = sqlite3.connect(args.db_path)
     init_db(conn)
 
