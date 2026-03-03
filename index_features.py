@@ -15,7 +15,7 @@ SUPPORTED = {".jpg", ".jpeg", ".png", ".bmp", ".gif"}
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="提取图像特征并保存到 MySQL 数据库")
-    parser.add_argument("--data-dir", type=str, default="D:\software\datasets\my_data", help="含 train/val 的数据目录")
+    parser.add_argument("--data-dir", type=str, default="D:\software\datasets\cat_dog_query_dir", help="含 train/val 的数据目录")
     parser.add_argument("--checkpoint", type=str, default="checkpoints/best.pt", help="训练得到的权重")
     parser.add_argument("--image-size", type=int, default=224, help="输入图像大小")
 
