@@ -1,18 +1,26 @@
-# 猫狗二分类（全连接神经网络）
+# 猫狗二分类 + 以图搜图（CNN 版本）
 
-这个项目提供一个**从零开始**的猫狗二分类示例，使用全连接神经网络（MLP）完成训练与评估。
+你提到 MLP 效果差，这里改为 **CNN（ResNet18 迁移学习）**，并补齐完整流程：
+1. 按文件名前缀清洗并拆分数据集（0 开头=猫，1 开头=狗）
+2. 训练 CNN 分类模型
+3. 提取图片特征并存入数据库（SQLite）
+4. 从数据库读取特征，完成以图搜图（只展示 Top5）
+5. 评估检索准确率（可检查是否达到 98%）
 
-## 1. 环境准备
+---
 
-建议使用 Python 3.9+。
+## 1) 安装依赖
 
 ```bash
 pip install -r requirements.txt
 ```
 
-## 2. 数据集准备
+## 2) 数据清洗与 8:2 拆分
 
-如果你的图片都放在一个目录中（例如 `D:\software\datasets\cat_dog_img\cat_dog_img\img`），并且**文件名以 0 开头的是猫、以 1 开头的是狗**，可以使用脚本按 8:2 自动拆分训练集与验证集：
+你的原始目录是：
+`D:\software\datasets\cat_dog_img\cat_dog_img\img`
+
+执行：
 
 ```bash
 python prepare_data.py \
@@ -21,43 +29,81 @@ python prepare_data.py \
   --train-ratio 0.8
 ```
 
-运行后会得到如下目录结构（使用 `torchvision.datasets.ImageFolder`）：
-请将数据集整理成如下目录结构（使用 `torchvision.datasets.ImageFolder`）：
+输出目录结构：
 
-```
-workspace/xiaoy/
-  data/
-    train/
-      cat/
-        *.jpg
-      dog/
-        *.jpg
-    val/
-      cat/
-        *.jpg
-      dog/
-        *.jpg
+```text
+data/
+  train/
+    cat/
+    dog/
+  val/
+    cat/
+    dog/
 ```
 
-> 你可以使用 Kaggle 的 Cats vs Dogs 或其他猫狗图片数据集，只要整理成上述结构即可。
+---
 
-## 3. 训练
+## 3) 训练 CNN
 
 ```bash
 python train.py \
   --data-dir data \
-  --image-size 128 \
-  --batch-size 64 \
-  --epochs 10 \
-  --lr 1e-3
+  --image-size 224 \
+  --batch-size 32 \
+  --epochs 20 \
+  --lr 3e-4
 ```
 
-训练完成后会在 `checkpoints/` 目录下保存最优模型（`best.pt`）。
+训练优化点：
+- 迁移学习（ResNet18 预训练权重）
+- 数据增强（翻转、旋转、颜色扰动）
+- Label smoothing
+- AdamW + ReduceLROnPlateau
+- Early stopping
 
-## 4. 评估
+最优模型会保存到：`checkpoints/best.pt`
 
-训练过程中会在每个 epoch 结束后输出验证集准确率。
+---
 
-## 5. 说明
+## 4) 特征提取并保存到数据库
 
-这是一个**纯全连接网络**示例：输入图像先被展平（flatten），再进入 MLP。该方案易于理解但对图像任务而言性能不如 CNN，适合入门和教学演示。
+```bash
+python index_features.py \
+  --data-dir data \
+  --checkpoint checkpoints/best.pt \
+  --db-path image_features.db
+```
+
+数据库表：`image_features`
+- `image_path`
+- `label`
+- `split`
+- `feature`（向量字节）
+- `dim`
+
+---
+
+## 5) 以图搜图（Top5）
+
+```bash
+python search_image.py \
+  --query-image "data/val/cat/0xxx.jpg" \
+  --checkpoint checkpoints/best.pt \
+  --db-path image_features.db \
+  --topk 5
+```
+
+脚本会从数据库读取全部特征，按余弦相似度排序，只返回前五个最相似图片。
+
+---
+
+## 6) 检索精度评估（目标 98%）
+
+```bash
+python eval_retrieval.py \
+  --db-path image_features.db \
+  --split val \
+  --target-top1 0.98
+```
+
+> 说明：是否达到 98% 与数据质量、重复样本、类别分布和训练轮数有关。当前脚本会给出 Top1/Top5 指标，并提示是否达到目标。
