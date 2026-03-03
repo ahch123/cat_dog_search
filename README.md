@@ -1,10 +1,10 @@
-# 猫狗二分类 + 以图搜图（CNN 版本）
+# 猫狗二分类 + 以图搜图（CNN + MySQL 版本）
 
-你提到 MLP 效果差，这里改为 **CNN（ResNet18 迁移学习）**，并补齐完整流程：
+完整流程：
 1. 按文件名前缀清洗并拆分数据集（0 开头=猫，1 开头=狗）
 2. 训练 CNN 分类模型
-3. 提取图片特征并存入数据库（SQLite）
-4. 从数据库读取特征，完成以图搜图（只展示 Top5）
+3. 提取图片特征并存入 **MySQL**
+4. 从 MySQL 读取特征，完成以图搜图（只展示 Top5）
 5. 评估检索准确率（可检查是否达到 98%）
 
 ---
@@ -17,28 +17,11 @@ pip install -r requirements.txt
 
 ## 2) 数据清洗与 8:2 拆分
 
-你的原始目录是：
-`D:\software\datasets\cat_dog_img\cat_dog_img\img`
-
-执行：
-
 ```bash
 python prepare_data.py \
   --source-dir "D:\\software\\datasets\\cat_dog_img\\cat_dog_img\\img" \
   --output-dir data \
   --train-ratio 0.8
-```
-
-输出目录结构：
-
-```text
-data/
-  train/
-    cat/
-    dog/
-  val/
-    cat/
-    dog/
 ```
 
 ---
@@ -54,31 +37,42 @@ python train.py \
   --lr 3e-4
 ```
 
-训练优化点：
-- 迁移学习（ResNet18 预训练权重）
-- 数据增强（翻转、旋转、颜色扰动）
-- Label smoothing
-- AdamW + ReduceLROnPlateau
-- Early stopping
-
-最优模型会保存到：`checkpoints/best.pt`
+最优模型：`checkpoints/best.pt`
 
 ---
 
-## 4) 特征提取并保存到数据库
+## 4) 特征提取并保存到 MySQL
+
+先确保 MySQL 中已有数据库（如 `image_search`）。
+
+```sql
+CREATE DATABASE IF NOT EXISTS image_search DEFAULT CHARSET utf8mb4;
+```
+
+你的连接参数（按你提供的信息）：
+- host: `192.168.2.36`
+- user: `root`
+- password: `123456`
+
+执行建索引：
 
 ```bash
 python index_features.py \
   --data-dir data \
   --checkpoint checkpoints/best.pt \
-  --db-path image_features.db
+  --mysql-host 192.168.2.36 \
+  --mysql-port 3306 \
+  --mysql-user root \
+  --mysql-password 123456 \
+  --mysql-database image_search \
+  --mysql-table image_features
 ```
 
-数据库表：`image_features`
+会自动创建表 `image_features`，字段包含：
 - `image_path`
 - `label`
-- `split`
-- `feature`（向量字节）
+- `split_name`
+- `feature`（LONGBLOB）
 - `dim`
 
 ---
@@ -89,11 +83,16 @@ python index_features.py \
 python search_image.py \
   --query-image "data/val/cat/0xxx.jpg" \
   --checkpoint checkpoints/best.pt \
-  --db-path image_features.db \
+  --mysql-host 192.168.2.36 \
+  --mysql-port 3306 \
+  --mysql-user root \
+  --mysql-password 123456 \
+  --mysql-database image_search \
+  --mysql-table image_features \
   --topk 5
 ```
 
-脚本会从数据库读取全部特征，按余弦相似度排序，只返回前五个最相似图片。
+脚本会强制最多展示前五个结果。
 
 ---
 
@@ -101,9 +100,12 @@ python search_image.py \
 
 ```bash
 python eval_retrieval.py \
-  --db-path image_features.db \
   --split val \
-  --target-top1 0.98
+  --target-top1 0.98 \
+  --mysql-host 192.168.2.36 \
+  --mysql-port 3306 \
+  --mysql-user root \
+  --mysql-password 123456 \
+  --mysql-database image_search \
+  --mysql-table image_features
 ```
-
-> 说明：是否达到 98% 与数据质量、重复样本、类别分布和训练轮数有关。当前脚本会给出 Top1/Top5 指标，并提示是否达到目标。
