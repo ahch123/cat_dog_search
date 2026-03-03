@@ -49,6 +49,8 @@ def build_dataloaders(config: Config) -> tuple[DataLoader, DataLoader]:
         ]
     )
 
+    train_dataset = datasets.ImageFolder(os.path.join(config.data_dir, "train"), train_transforms)
+    val_dataset = datasets.ImageFolder(os.path.join(config.data_dir, "val"), val_transforms)
     train_dataset = datasets.ImageFolder(os.path.join(config.data_dir, "D:\software\datasets\my_data\\train"), train_transforms)
     val_dataset = datasets.ImageFolder(os.path.join(config.data_dir, "D:\software\datasets\my_data\\val"), val_transforms)
 
@@ -131,6 +133,7 @@ def parse_args() -> Config:
     parser.add_argument("--data-dir", type=str, default="data", help="数据集目录")
     parser.add_argument("--image-size", type=int, default=224, help="输入图像大小")
     parser.add_argument("--batch-size", type=int, default=32, help="批量大小")
+    parser.add_argument("--epochs", type=int, default=20, help="训练轮数")
     parser.add_argument("--epochs", type=int, default=50, help="训练轮数")
     parser.add_argument("--lr", type=float, default=3e-4, help="学习率")
     parser.add_argument("--weight-decay", type=float, default=1e-4, help="L2 正则")
