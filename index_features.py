@@ -2,7 +2,6 @@ import argparse
 import hashlib
 import os
 from pathlib import Path
-
 import numpy as np
 import pymysql
 import torch
@@ -16,14 +15,14 @@ SUPPORTED = {".jpg", ".jpeg", ".png", ".bmp", ".gif"}
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="提取图像特征并保存到 MySQL 数据库")
-    parser.add_argument("--data-dir", type=str, default="data", help="含 train/val 的数据目录")
+    parser.add_argument("--data-dir", type=str, default="D:\software\datasets\my_data", help="含 train/val 的数据目录")
     parser.add_argument("--checkpoint", type=str, default="checkpoints/best.pt", help="训练得到的权重")
     parser.add_argument("--image-size", type=int, default=224, help="输入图像大小")
 
-    parser.add_argument("--mysql-host", type=str, default="127.0.0.1", help="MySQL 主机")
+    parser.add_argument("--mysql-host", type=str, default="192.168.2.36", help="MySQL 主机")
     parser.add_argument("--mysql-port", type=int, default=3306, help="MySQL 端口")
     parser.add_argument("--mysql-user", type=str, default="root", help="MySQL 用户名")
-    parser.add_argument("--mysql-password", type=str, default="", help="MySQL 密码")
+    parser.add_argument("--mysql-password", type=str, default="666666", help="MySQL 密码")
     parser.add_argument("--mysql-database", type=str, default="image_search", help="MySQL 数据库名")
     parser.add_argument("--mysql-table", type=str, default="image_features", help="MySQL 表名")
     return parser.parse_args()

@@ -3,11 +3,6 @@ from pathlib import Path
 
 import numpy as np
 import pymysql
-import os
-import sqlite3
-from pathlib import Path
-
-import numpy as np
 import torch
 from PIL import Image
 from torchvision import models, transforms
@@ -20,10 +15,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--topk", type=int, default=5, help="返回最相似图片数量")
     parser.add_argument("--image-size", type=int, default=224, help="输入图像大小")
 
-    parser.add_argument("--mysql-host", type=str, default="127.0.0.1", help="MySQL 主机")
+    parser.add_argument("--mysql-host", type=str, default="192.168.2.36", help="MySQL 主机")
     parser.add_argument("--mysql-port", type=int, default=3306, help="MySQL 端口")
     parser.add_argument("--mysql-user", type=str, default="root", help="MySQL 用户名")
-    parser.add_argument("--mysql-password", type=str, default="", help="MySQL 密码")
+    parser.add_argument("--mysql-password", type=str, default="666666", help="MySQL 密码")
     parser.add_argument("--mysql-database", type=str, default="image_search", help="MySQL 数据库名")
     parser.add_argument("--mysql-table", type=str, default="image_features", help="MySQL 表名")
     return parser.parse_args()
@@ -36,15 +31,6 @@ def safe_torch_load(checkpoint_path: str, device: torch.device):
         return torch.load(checkpoint_path, map_location=device)
 
 
-    parser = argparse.ArgumentParser(description="以图搜图（Top5）")
-    parser.add_argument("--query-image", type=str, required=True, help="查询图片路径")
-    parser.add_argument("--checkpoint", type=str, default="checkpoints/best.pt", help="训练权重")
-    parser.add_argument("--db-path", type=str, default="image_features.db", help="特征数据库路径")
-    parser.add_argument("--topk", type=int, default=5, help="返回最相似图片数量")
-    parser.add_argument("--image-size", type=int, default=224, help="输入图像大小")
-    return parser.parse_args()
-
-
 def build_feature_model(checkpoint_path: str, device: torch.device) -> torch.nn.Module:
     model = models.resnet18(weights=None)
     in_features = model.fc.in_features
@@ -54,7 +40,6 @@ def build_feature_model(checkpoint_path: str, device: torch.device) -> torch.nn.
     )
 
     ckpt = safe_torch_load(checkpoint_path, device)
-    ckpt = torch.load(checkpoint_path, map_location=device)
     model.load_state_dict(ckpt["model_state"])
     model.fc = torch.nn.Identity()
     model.to(device)
@@ -108,19 +93,6 @@ def load_features(conn, table_name: str) -> list[tuple[str, str, str, np.ndarray
 
 def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
     denom = np.linalg.norm(a) * np.linalg.norm(b)
-def load_features(db_path: str) -> list[tuple[str, str, str, np.ndarray]]:
-    conn = sqlite3.connect(db_path)
-    cursor = conn.execute("SELECT image_path, label, split, feature, dim FROM image_features")
-    rows = []
-    for image_path, label, split, feature_blob, dim in cursor:
-        feat = np.frombuffer(feature_blob, dtype=np.float32, count=dim)
-        rows.append((image_path, label, split, feat))
-    conn.close()
-    return rows
-
-
-def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
-    denom = (np.linalg.norm(a) * np.linalg.norm(b))
     if denom == 0:
         return 0.0
     return float(np.dot(a, b) / denom)
@@ -130,9 +102,6 @@ def main() -> None:
     args = parse_args()
     if args.topk <= 0:
         raise SystemExit("topk must be > 0")
-
-    if not os.path.exists(args.db_path):
-        raise SystemExit(f"Database not found: {args.db_path}")
 
     query_path = Path(args.query_image)
     if not query_path.exists():
@@ -162,22 +131,6 @@ def main() -> None:
     print("Top matches:")
     for rank, (score, image_path, label, split_name) in enumerate(top_results, start=1):
         print(f"{rank}. score={score:.4f} | label={label} | split={split_name} | path={image_path}")
-    rows = load_features(args.db_path)
-    if not rows:
-        raise SystemExit("No features found in database.")
-
-    scored = []
-    for image_path, label, split, feat in rows:
-        score = cosine_similarity(query_feat, feat)
-        scored.append((score, image_path, label, split))
-
-    scored.sort(key=lambda x: x[0], reverse=True)
-    top_results = scored[: args.topk]
-
-    print(f"Query: {query_path}")
-    print("Top matches:")
-    for rank, (score, image_path, label, split) in enumerate(top_results, start=1):
-        print(f"{rank}. score={score:.4f} | label={label} | split={split} | path={image_path}")
 
 
 if __name__ == "__main__":
