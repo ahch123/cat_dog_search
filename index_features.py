@@ -5,10 +5,6 @@ from pathlib import Path
 
 import numpy as np
 import pymysql
-import sqlite3
-from pathlib import Path
-
-import numpy as np
 import torch
 from PIL import Image
 from torchvision import models, transforms
@@ -40,14 +36,6 @@ def safe_torch_load(checkpoint_path: str, device: torch.device):
         return torch.load(checkpoint_path, map_location=device)
 
 
-    parser = argparse.ArgumentParser(description="提取图像特征并保存到 SQLite 数据库")
-    parser.add_argument("--data-dir", type=str, default="D:\software\datasets\my_data", help="含 train/val 的数据目录")
-    parser.add_argument("--checkpoint", type=str, default="checkpoints/best.pt", help="训练得到的权重")
-    parser.add_argument("--db-path", type=str, default="image_features.db", help="SQLite 数据库路径")
-    parser.add_argument("--image-size", type=int, default=224, help="输入图像大小")
-    return parser.parse_args()
-
-
 def build_feature_model(checkpoint_path: str, device: torch.device) -> torch.nn.Module:
     model = models.resnet18(weights=None)
     in_features = model.fc.in_features
@@ -57,7 +45,6 @@ def build_feature_model(checkpoint_path: str, device: torch.device) -> torch.nn.
     )
 
     ckpt = safe_torch_load(checkpoint_path, device)
-    ckpt = torch.load(checkpoint_path, map_location=device)
     model.load_state_dict(ckpt["model_state"])
     model.fc = torch.nn.Identity()
     model.to(device)
@@ -111,7 +98,6 @@ def init_table(conn, table_name: str) -> None:
                 id BIGINT AUTO_INCREMENT PRIMARY KEY,
                 path_hash CHAR(64) NOT NULL UNIQUE,
                 image_path TEXT NOT NULL,
-                image_path VARCHAR(1024) NOT NULL UNIQUE,
                 label VARCHAR(32) NOT NULL,
                 split_name VARCHAR(32) NOT NULL,
                 feature LONGBLOB NOT NULL,
@@ -133,12 +119,6 @@ def upsert_feature(conn, table_name: str, image_path: str, label: str, split_nam
             VALUES (%s, %s, %s, %s, %s, %s)
             ON DUPLICATE KEY UPDATE
                 image_path = VALUES(image_path),
-    with conn.cursor() as cursor:
-        cursor.execute(
-            f"""
-            INSERT INTO `{table_name}` (image_path, label, split_name, feature, dim)
-            VALUES (%s, %s, %s, %s, %s)
-            ON DUPLICATE KEY UPDATE
                 label = VALUES(label),
                 split_name = VALUES(split_name),
                 feature = VALUES(feature),
@@ -146,40 +126,6 @@ def upsert_feature(conn, table_name: str, image_path: str, label: str, split_nam
             """,
             (path_hash, image_path, label, split_name, feature.tobytes(), feature.shape[0]),
         )
-            (image_path, label, split_name, feature.tobytes(), feature.shape[0]),
-        )
-def init_db(conn: sqlite3.Connection) -> None:
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS image_features (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            image_path TEXT UNIQUE,
-            label TEXT,
-            split TEXT,
-            feature BLOB,
-            dim INTEGER
-        )
-        """
-    )
-    conn.commit()
-
-
-def upsert_feature(
-    conn: sqlite3.Connection, image_path: str, label: str, split: str, feature: np.ndarray
-) -> None:
-    feature = feature.astype(np.float32)
-    conn.execute(
-        """
-        INSERT INTO image_features (image_path, label, split, feature, dim)
-        VALUES (?, ?, ?, ?, ?)
-        ON CONFLICT(image_path) DO UPDATE SET
-            label=excluded.label,
-            split=excluded.split,
-            feature=excluded.feature,
-            dim=excluded.dim
-        """,
-        (image_path, label, split, feature.tobytes(), feature.shape[0]),
-    )
 
 
 def extract_feature(
@@ -214,16 +160,6 @@ def main() -> None:
     conn.commit()
     conn.close()
     print(f"Indexed {len(data_items)} images into MySQL {args.mysql_database}.{args.mysql_table}")
-    conn = sqlite3.connect(args.db_path)
-    init_db(conn)
-
-    for image_path, label, split in tqdm(data_items, desc="Indexing"):
-        feature = extract_feature(model, image_path, transform, device)
-        upsert_feature(conn, os.path.abspath(str(image_path)), label, split, feature)
-
-    conn.commit()
-    conn.close()
-    print(f"Indexed {len(data_items)} images into {args.db_path}")
 
 
 if __name__ == "__main__":
