@@ -109,3 +109,36 @@ python eval_retrieval.py \
   --mysql-database image_search \
   --mysql-table image_features
 ```
+
+---
+
+## 7) 如果你没接收到（重跑/重推）
+
+可以按下面顺序重新执行一次：
+
+```bash
+python index_features.py \
+  --data-dir data \
+  --checkpoint checkpoints/best.pt \
+  --mysql-host 192.168.2.36 \
+  --mysql-port 3306 \
+  --mysql-user root \
+  --mysql-password 123456 \
+  --mysql-database image_search \
+  --mysql-table image_features
+
+python search_image.py \
+  --query-image "data/val/cat/0xxx.jpg" \
+  --checkpoint checkpoints/best.pt \
+  --mysql-host 192.168.2.36 \
+  --mysql-port 3306 \
+  --mysql-user root \
+  --mysql-password 123456 \
+  --mysql-database image_search \
+  --mysql-table image_features \
+  --topk 5
+```
+
+如果数据库连接失败，请先确认：
+- MySQL 服务对 `192.168.2.36:3306` 可访问
+- `root/123456` 账号有 `image_search` 库的读写权限
