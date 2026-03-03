@@ -1,4 +1,5 @@
 import argparse
+import hashlib
 import os
 from pathlib import Path
 
@@ -29,6 +30,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--mysql-password", type=str, default="", help="MySQL 密码")
     parser.add_argument("--mysql-database", type=str, default="image_search", help="MySQL 数据库名")
     parser.add_argument("--mysql-table", type=str, default="image_features", help="MySQL 表名")
+    return parser.parse_args()
+
+
+def safe_torch_load(checkpoint_path: str, device: torch.device):
+    try:
+        return torch.load(checkpoint_path, map_location=device, weights_only=True)
+    except TypeError:
+        return torch.load(checkpoint_path, map_location=device)
+
+
     parser = argparse.ArgumentParser(description="提取图像特征并保存到 SQLite 数据库")
     parser.add_argument("--data-dir", type=str, default="D:\software\datasets\my_data", help="含 train/val 的数据目录")
     parser.add_argument("--checkpoint", type=str, default="checkpoints/best.pt", help="训练得到的权重")
@@ -45,6 +56,7 @@ def build_feature_model(checkpoint_path: str, device: torch.device) -> torch.nn.
         torch.nn.Linear(in_features, 2),
     )
 
+    ckpt = safe_torch_load(checkpoint_path, device)
     ckpt = torch.load(checkpoint_path, map_location=device)
     model.load_state_dict(ckpt["model_state"])
     model.fc = torch.nn.Identity()
@@ -97,6 +109,8 @@ def init_table(conn, table_name: str) -> None:
             f"""
             CREATE TABLE IF NOT EXISTS `{table_name}` (
                 id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                path_hash CHAR(64) NOT NULL UNIQUE,
+                image_path TEXT NOT NULL,
                 image_path VARCHAR(1024) NOT NULL UNIQUE,
                 label VARCHAR(32) NOT NULL,
                 split_name VARCHAR(32) NOT NULL,
@@ -111,6 +125,14 @@ def init_table(conn, table_name: str) -> None:
 
 def upsert_feature(conn, table_name: str, image_path: str, label: str, split_name: str, feature: np.ndarray) -> None:
     feature = feature.astype(np.float32)
+    path_hash = hashlib.sha256(image_path.encode("utf-8")).hexdigest()
+    with conn.cursor() as cursor:
+        cursor.execute(
+            f"""
+            INSERT INTO `{table_name}` (path_hash, image_path, label, split_name, feature, dim)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                image_path = VALUES(image_path),
     with conn.cursor() as cursor:
         cursor.execute(
             f"""
@@ -122,6 +144,8 @@ def upsert_feature(conn, table_name: str, image_path: str, label: str, split_nam
                 feature = VALUES(feature),
                 dim = VALUES(dim)
             """,
+            (path_hash, image_path, label, split_name, feature.tobytes(), feature.shape[0]),
+        )
             (image_path, label, split_name, feature.tobytes(), feature.shape[0]),
         )
 def init_db(conn: sqlite3.Connection) -> None:

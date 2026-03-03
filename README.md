@@ -210,6 +210,19 @@ git push -u cat_dag_search work
 ```
 
 如果分支名是 `main`，把 `work` 改成 `main` 即可。
+
+## 11) 常见报错：`Specified key was too long`
+
+报错原因：MySQL 在 `utf8mb4` 下索引长度上限通常是 3072 bytes。
+如果把 `image_path VARCHAR(1024)` 设为唯一索引，最大可能占用 `1024 * 4 = 4096 bytes`，就会触发 `(1071) Specified key was too long`。
+
+当前代码已修复为：
+- `image_path` 改为 `TEXT`
+- 新增 `path_hash CHAR(64) UNIQUE` 作为唯一键（SHA256）
+
+这样既保留完整路径，又避免超长索引问题。
+
+另外 `torch.load` 的 `FutureWarning` 也已处理：优先使用 `weights_only=True`，旧版 PyTorch 则自动回退。
   --db-path image_features.db \
   --split val \
   --target-top1 0.98

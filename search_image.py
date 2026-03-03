@@ -26,6 +26,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--mysql-password", type=str, default="", help="MySQL 密码")
     parser.add_argument("--mysql-database", type=str, default="image_search", help="MySQL 数据库名")
     parser.add_argument("--mysql-table", type=str, default="image_features", help="MySQL 表名")
+    return parser.parse_args()
+
+
+def safe_torch_load(checkpoint_path: str, device: torch.device):
+    try:
+        return torch.load(checkpoint_path, map_location=device, weights_only=True)
+    except TypeError:
+        return torch.load(checkpoint_path, map_location=device)
+
+
     parser = argparse.ArgumentParser(description="以图搜图（Top5）")
     parser.add_argument("--query-image", type=str, required=True, help="查询图片路径")
     parser.add_argument("--checkpoint", type=str, default="checkpoints/best.pt", help="训练权重")
@@ -43,6 +53,7 @@ def build_feature_model(checkpoint_path: str, device: torch.device) -> torch.nn.
         torch.nn.Linear(in_features, 2),
     )
 
+    ckpt = safe_torch_load(checkpoint_path, device)
     ckpt = torch.load(checkpoint_path, map_location=device)
     model.load_state_dict(ckpt["model_state"])
     model.fc = torch.nn.Identity()
